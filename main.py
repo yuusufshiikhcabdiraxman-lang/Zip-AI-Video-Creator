@@ -103,8 +103,16 @@ def videos():
 def generate(req: GenerateRequest):
     if not req.prompt.strip():
         raise HTTPException(400, "Prompt is required")
-    pred = create_replicate_prediction(req.prompt, req.aspect_ratio, req.duration, req.quality, req.speed)
-        item = {
+
+    pred = create_replicate_prediction(
+        req.prompt,
+        req.aspect_ratio,
+        req.duration,
+        req.quality,
+        req.language
+    )
+
+    item = {
         "id": pred.get("id", str(uuid.uuid4())),
         "prompt": req.prompt,
         "language": req.language,
@@ -112,7 +120,7 @@ def generate(req: GenerateRequest):
         "duration": req.duration,
         "quality": req.quality,
         "status": pred.get("status", "starting"),
-        "output": pred.get("output"),
+        "output": pred.get("output")
     }
 async def generate_image(
     prompt: str = Form(...),
