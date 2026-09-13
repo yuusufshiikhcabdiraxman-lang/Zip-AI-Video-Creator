@@ -104,7 +104,7 @@ def generate(req: GenerateRequest):
     if not req.prompt.strip():
         raise HTTPException(400, "Prompt is required")
     pred = create_replicate_prediction(req.prompt, req.aspect_ratio, req.duration, req.quality, req.speed)
-    item = {
+        item = {
         "id": pred.get("id", str(uuid.uuid4())),
         "prompt": req.prompt,
         "language": req.language,
@@ -113,7 +113,7 @@ def generate(req: GenerateRequest):
         "quality": req.quality,
         "status": pred.get("status", "starting"),
         "output": pred.get("output"),
-        @app.post("/api/generate-image")
+    }
 async def generate_image(
     prompt: str = Form(...),
     language: str = Form("so"),
@@ -132,14 +132,11 @@ async def generate_image(
     cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME")
     upload_preset = os.getenv("CLOUDINARY_UPLOAD_PRESET")
 
-    if not cloud_name or not upload_preset:
+        if not cloud_name or not upload_preset:
         raise HTTPException(
             500,
             "Cloudinary is not configured"
         )
-            "Cloudinary is not configured"
-        )
-
     upload_url = (
         f"https://api.cloudinary.com/v1_1/"
         f"{cloud_name}/image/upload"
