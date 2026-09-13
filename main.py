@@ -21,6 +21,10 @@ DATA.parent.mkdir(parents=True, exist_ok=True)
 
 if not DATA.exists():
     DATA.write_text("[]", encoding="utf-8")
+DATA.parent.mkdir(parents=True, exist_ok=True)
+
+if not DATA.exists():
+    DATA.write_text("[]", encoding="utf-8")
 app = FastAPI(title="Zip Video AI API")
 
 origin = os.getenv("FRONTEND_ORIGIN", "*")
