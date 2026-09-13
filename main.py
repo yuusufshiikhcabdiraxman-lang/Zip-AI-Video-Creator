@@ -9,18 +9,23 @@ from pydantic import BaseModel
 
 load_dotenv()
 
-BASE = Path(__file__).resolve().parent.parent
+BASE = Path(__file__).resolve().parent
 UPLOADS = BASE / "uploads"
 OUTPUTS = BASE / "outputs"
 DATA = BASE / "backend" / "videos.json"
+
 UPLOADS.mkdir(exist_ok=True)
 OUTPUTS.mkdir(exist_ok=True)
+
+DATA.parent.mkdir(parents=True, exist_ok=True)
+
 if not DATA.exists():
     DATA.write_text("[]", encoding="utf-8")
 
 app = FastAPI(title="Zip Video AI API")
 
 origin = os.getenv("FRONTEND_ORIGIN", "*")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"] if origin == "*" else [origin],
@@ -35,8 +40,6 @@ class GenerateRequest(BaseModel):
     aspect_ratio: str = "9:16"
     duration: int = 5
     quality: str = "1080p"
-    speed: str = "fast"
-    quality: str = "fast"
 
 def history():
     try:
