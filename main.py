@@ -137,14 +137,15 @@ async def generate_image(
 
     image_bytes = await image.read()
 
-    cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME")
+        cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME")
     upload_preset = os.getenv("CLOUDINARY_UPLOAD_PRESET")
 
-        if not cloud_name or not upload_preset:
+    if not cloud_name or not upload_preset:
         raise HTTPException(
             500,
             "Cloudinary is not configured"
         )
+
     upload_url = (
         f"https://api.cloudinary.com/v1_1/"
         f"{cloud_name}/image/upload"
