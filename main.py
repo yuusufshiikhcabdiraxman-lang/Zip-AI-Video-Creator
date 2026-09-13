@@ -136,17 +136,17 @@ async def generate_image(
         raise HTTPException(400, "Use JPG, PNG, or WEBP")
 
     image_bytes = await image.read()
-
-        cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME")
+    
+    cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME")
     upload_preset = os.getenv("CLOUDINARY_UPLOAD_PRESET")
 
     if not cloud_name or not upload_preset:
-        raise HTTPException(
-            500,
-            "Cloudinary is not configured"
-        )
-
-    upload_url = (
+      raise HTTPException(
+         500,
+        "Cloudinary is not configured"
+    )
+        
+ upload_url = (
         f"https://api.cloudinary.com/v1_1/"
         f"{cloud_name}/image/upload"
     )
@@ -169,10 +169,11 @@ async def generate_image(
     if not upload_response.ok:
         raise HTTPException(
             upload_response.status_code,
-            f"Cloudinary error: {upload_response.text[:500]}"
+            f"Cloudinary error: {upload_response.text}"
         )
 
-    image_url = upload_response.json().get("secure_url")
+    upload_data = upload_response.json()
+    image_url = upload_data.get("secure_url")
 
     if not image_url:
         raise HTTPException(
@@ -180,7 +181,7 @@ async def generate_image(
             "Cloudinary did not return an image URL"
         )
 
-    pred = create_replicate_prediction(
+        pred = create_replicate_prediction(
         prompt,
         aspect_ratio,
         duration,
@@ -189,31 +190,34 @@ async def generate_image(
     )
 
     return pred
-    # For a production Render deployment, upload this file to object storage first.
-    raise HTTPException(
-        501,
-        "Image-to-video needs public object storage (S3/R2/Cloudinary) for the uploaded image. "
-        "The upload is saved locally; connect storage and pass its public URL to Replicate."
-    )
+
 
 @app.get("/api/predictions/{prediction_id}")
 def prediction(prediction_id: str):
     token = os.getenv("REPLICATE_API_TOKEN")
     if not token:
         raise HTTPException(500, "REPLICATE_API_TOKEN is not configured")
+
     r = requests.get(
         f"https://api.replicate.com/v1/predictions/{prediction_id}",
         headers={"Authorization": f"Bearer {token}"},
         timeout=30,
     )
+
     if not r.ok:
-        raise HTTPException(r.status_code, f"Replicate error: {r.text[:500]}")
+        raise HTTPException(
+            r.status_code,
+            f"Replicate error: {r.text[:500]}"
+        )
+
     data = r.json()
     items = history()
+
     for item in items:
         if item["id"] == prediction_id:
             item["status"] = data.get("status")
             item["output"] = data.get("output")
             break
+
     save_history(items)
     return data
