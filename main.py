@@ -50,38 +50,45 @@ def history():
 def save_history(items):
     DATA.write_text(json.dumps(items[-100:], ensure_ascii=False, indent=2), encoding="utf-8")
 
-def create_replicate_prediction(prompt: str, aspect_ratio: str, duration: int, quality: str = "fast", speed: str = "fast", image_url=None):
+def create_replicate_prediction(
+    prompt: str,
+    aspect_ratio: str,
+    duration: int,
+    quality: str = "fast",
+    image_url: str = None
+):
     token = os.getenv("REPLICATE_API_TOKEN")
     model = os.getenv("REPLICATE_MODEL", "kwaivgi/kling-v2.1")
-    if not token:
-        raise HTTPException(500, "REPLICATE_API_TOKEN is not configured")
 
-    # This starter sends a common text/image-to-video shape.
-    # Model-specific fields may need adjustment to match the selected Replicate model.
+    if not token:
+        raise HTTPException(
+            500,
+            "REPLICATE_API_TOKEN is not configured"
+        )
+
     inp = {
         "prompt": prompt,
         "aspect_ratio": aspect_ratio,
         "duration": duration,
-        # Quality/speed are normalized here. Exact support depends on the selected Replicate model.
-        "quality": quality,
-        "speed": speed,
+        "quality": quality
     }
-    # Quality is normalized here so the UI can offer Fast/HD/4K.
-    # Exact 4K parameters depend on the Replicate model selected.
-    if quality not in {"fast", "hd", "4k"}:
-        raise HTTPException(400, "Quality must be fast, hd, or 4k")
-    inp["quality"] = quality
-    if image_url:
-        inp["image"] = image_url
 
     r = requests.post(
-        "https://api.replicate.com/v1/models/" + model + "/predictions",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        f"https://api.replicate.com/v1/models/{model}/predictions",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        },
         json={"input": inp},
-        timeout=30,
+        timeout=60
     )
+
     if not r.ok:
-        raise HTTPException(r.status_code, f"Replicate error: {r.text[:500]}")
+        raise HTTPException(
+            r.status_code,
+            f"Replicate error: {r.text[:500]}"
+        )
+
     return r.json()
 
 @app.get("/api/health")
@@ -106,30 +113,76 @@ def generate(req: GenerateRequest):
         "quality": req.quality,
         "status": pred.get("status", "starting"),
         "output": pred.get("output"),
-        "created_at": int(time.time()),
-    }
-    items = history()
-    items.append(item)
-    save_history(items)
-    return item
-
-@app.post("/api/generate-image")
+        @app.post("/api/generate-image")
 async def generate_image(
     prompt: str = Form(...),
     language: str = Form("so"),
     aspect_ratio: str = Form("9:16"),
     duration: int = Form(5),
     quality: str = Form("fast"),
-    image: UploadFile = File(...),
+    image: UploadFile = File(...)
 ):
     ext = Path(image.filename or "").suffix.lower()
+
     if ext not in {".jpg", ".jpeg", ".png", ".webp"}:
         raise HTTPException(400, "Use JPG, PNG, or WEBP")
-    name = f"{uuid.uuid4()}{ext}"
-    path = UPLOADS / name
-    path.write_bytes(await image.read())
 
-    # Replicate generally needs a publicly reachable image URL for hosted models.
+    image_bytes = await image.read()
+
+    cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME")
+    upload_preset = os.getenv("CLOUDINARY_UPLOAD_PRESET")
+
+    if not cloud_name or not upload_preset:
+        raise HTTPException(
+            500,
+            "Cloudinary is not configured"
+        )
+            "Cloudinary is not configured"
+        )
+
+    upload_url = (
+        f"https://api.cloudinary.com/v1_1/"
+        f"{cloud_name}/image/upload"
+    )
+
+    upload_response = requests.post(
+        upload_url,
+        data={
+            "upload_preset": upload_preset
+        },
+        files={
+            "file": (
+                image.filename or "image.jpg",
+                image_bytes,
+                image.content_type or "image/jpeg"
+            )
+        },
+        timeout=60
+    )
+
+    if not upload_response.ok:
+        raise HTTPException(
+            upload_response.status_code,
+            f"Cloudinary error: {upload_response.text[:500]}"
+        )
+
+    image_url = upload_response.json().get("secure_url")
+
+    if not image_url:
+        raise HTTPException(
+            500,
+            "Cloudinary did not return an image URL"
+        )
+
+    pred = create_replicate_prediction(
+        prompt,
+        aspect_ratio,
+        duration,
+        quality,
+        image_url=image_url
+    )
+
+    return pred
     # For a production Render deployment, upload this file to object storage first.
     raise HTTPException(
         501,
