@@ -9,15 +9,18 @@ from pydantic import BaseModel
 
 load_dotenv()
 
-BASE = Path(__file__).resolve().parent.parent
+BASE = Path(__file__).resolve().parent
+
 UPLOADS = BASE / "uploads"
 OUTPUTS = BASE / "outputs"
 DATA = BASE / "backend" / "videos.json"
-UPLOADS.mkdir(exist_ok=True)
-OUTPUTS.mkdir(exist_ok=True)
+
+UPLOADS.mkdir(parents=True, exist_ok=True)
+OUTPUTS.mkdir(parents=True, exist_ok=True)
+DATA.parent.mkdir(parents=True, exist_ok=True)
+
 if not DATA.exists():
     DATA.write_text("[]", encoding="utf-8")
-
 app = FastAPI(title="Zip Video AI API")
 
 origin = os.getenv("FRONTEND_ORIGIN", "*")
