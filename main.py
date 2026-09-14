@@ -73,37 +73,43 @@ def error_text(data):
 
 def create_prediction(prompt, aspect, quality, language, image_url=None):
     token = env("REPLICATE_API_TOKEN")
-    version = env("REPLICATE_MODEL_VERSION")
+
     payload = {
-        "version": version,
         "input": {
             "prompt": prompt,
             "aspect_ratio": aspect,
-            "duration": CLIP_SECONDS,
-            "quality": quality,
-            "language": language,
-        },
+            "duration": CLIP_SECONDS
+        }
     }
+
     if image_url:
         payload["input"]["image"] = image_url
 
     try:
         r = requests.post(
-            "https://api.replicate.com/v1/predictions",
-            headers={"Authorization": f"Bearer {token}",
-                     "Content-Type": "application/json"},
-            json=payload, timeout=60
+            "https://api.replicate.com/v1/models/kwaivgi/kling-v2.1/predictions",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=60
         )
+
         data = r.json()
+
     except requests.RequestException as e:
         raise HTTPException(502, f"Replicate connection error: {e}")
+
     except ValueError:
         raise HTTPException(502, "Replicate returned invalid JSON.")
 
     if not r.ok:
         raise HTTPException(r.status_code, error_text(data))
+
     if not data.get("id"):
         raise HTTPException(502, "Replicate did not return a prediction ID.")
+
     return data
 
 
