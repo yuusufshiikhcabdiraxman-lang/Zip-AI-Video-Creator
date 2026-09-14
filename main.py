@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import Optional
 
 import requests
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="Zip-AI Video Creator", version="3.0.0")
+app = FastAPI(title="Zip-AI Video Creator", version="4.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
                    allow_methods=["*"], allow_headers=["*"])
 
@@ -254,8 +254,37 @@ def run_job(job_id, req):
 
 
 @app.post("/api/generate")
-def generate(req: GenerateRequest):
-    return run_job(str(uuid.uuid4()), req)
+def generate(req: GenerateRequest, background_tasks: BackgroundTasks):
+    job_id = str(uuid.uuid4())
+
+    # Save the job immediately so the browser can poll its progress.
+    count = (req.duration + 9) // 10
+    record = {
+        "id": job_id,
+        "prompt": req.prompt,
+        "duration": req.duration,
+        "total_clips": count,
+        "status": "queued",
+        "progress": 0,
+        "aspect_ratio": req.aspect_ratio,
+        "quality": req.quality,
+        "language": req.language,
+        "output": None,
+        "error": None,
+    }
+    h = history()
+    h.insert(0, record)
+    save_history(h[:50])
+
+    background_tasks.add_task(run_job, job_id, req)
+
+    return {
+        "success": True,
+        "job_id": job_id,
+        "duration": req.duration,
+        "total_clips": count,
+        "status": "queued",
+    }
 
 
 @app.get("/api/jobs/{job_id}")
@@ -352,14 +381,69 @@ let f=e.target.files[0];if(!f)return;let fd=new FormData();fd.append("file",f);
 try{let r=await fetch("/api/upload",{method:"POST",body:fd}),d=await r.json();if(!r.ok)throw Error(et(d));imageUrl=d.url;document.getElementById("up").textContent="✅ Sawirka waa diyaar."}catch(x){imageUrl=null;document.getElementById("up").textContent="❌ "+x.message}});
 async function generate(){
 let b=document.getElementById("go"),p=document.getElementById("prompt").value.trim(),duration=Number(document.getElementById("duration").value);
-if(!p)return show("Fadlan geli prompt.",true);if(mode==="image"&&!imageUrl)return show("Fadlan geli sawirka.",true);
-b.disabled=true;b.textContent="⏳ Video-ga waa la samaynayaa...";
-show("⏳ Waxaa la samaynayaa "+Math.ceil(duration/10)+" clips oo 10 seconds ah.\nKadib dhammaantood waxaa loo midaynayaa HAL video.\n\nFadlan sug...");
-try{let r=await fetch("/api/generate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-prompt:p,duration,aspect_ratio:document.getElementById("aspect").value,quality:document.getElementById("quality").value,
-language:document.getElementById("lang").value,image_url:mode==="image"?imageUrl:null})}),d=await r.json();if(!r.ok)throw Error(et(d));
-show("✅ HAL video ayaa diyaar ah.\n\nDuration: "+d.duration+" seconds\nClips: "+d.total_clips+"\n\n🎬 Fur video-ga:\n"+location.origin+d.output);loadHistory()
-}catch(e){show("❌ "+(e.message||e),true)}finally{b.disabled=false;b.textContent="✨ Samee Video"}}
+if(!p)return show("Fadlan geli prompt.",true);
+if(mode==="image"&&!imageUrl)return show("Fadlan geli sawirka.",true);
+
+b.disabled=true;
+b.textContent="⏳ Video-ga waa la diyaarinayaa...";
+show("⏳ Job-ka waa la bilaabay.\n\nWaxaa la samaynayaa "+Math.ceil(duration/10)+" clips oo 10 seconds ah.\nKadib FFmpeg ayaa isku daraya HAL video.\n\nFadlan ha xirin bogga.");
+
+try{
+let r=await fetch("/api/generate",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({
+prompt:p,
+duration,
+aspect_ratio:document.getElementById("aspect").value,
+quality:document.getElementById("quality").value,
+language:document.getElementById("lang").value,
+image_url:mode==="image"?imageUrl:null
+})
+});
+let d=await r.json();
+if(!r.ok)throw Error(et(d));
+
+await pollJob(d.job_id);
+}catch(e){
+show("❌ "+(e.message||e),true);
+b.disabled=false;
+b.textContent="✨ Samee Video";
+}
+}
+
+async function pollJob(jobId){
+let b=document.getElementById("go");
+
+while(true){
+let r=await fetch("/api/jobs/"+jobId);
+let d=await r.json();
+
+if(!r.ok)throw Error(et(d));
+
+if(d.status==="queued"){
+show("⏳ Job-ka saf ayuu ku jiraa.\n\nClips: "+d.total_clips+"\nProgress: 0%");
+}
+else if(d.status==="processing"){
+let pct=Number(d.progress||0);
+let done=Math.min(d.total_clips||0,Math.round((pct/90)*(d.total_clips||0)));
+show("⏳ Video-ga waa la samaynayaa...\n\nClips: "+d.total_clips+"\nLa dhammeeyey: "+done+"\nProgress: "+pct+"%");
+}
+else if(d.status==="succeeded"){
+show("✅ HAL video ayaa diyaar ah.\n\nDuration: "+d.duration+" seconds\nClips: "+d.total_clips+"\nProgress: 100%\n\n🎬 Fur HAL video-ga:\n"+location.origin+d.output);
+loadHistory();
+b.disabled=false;
+b.textContent="✨ Samee Video";
+return;
+}
+else if(d.status==="failed"){
+throw Error(d.error||"Video generation failed.");
+}
+
+await new Promise(resolve=>setTimeout(resolve,5000));
+}
+}
+
 async function loadHistory(){let h=document.getElementById("hist");try{let r=await fetch("/api/history"),a=await r.json();h.innerHTML="";a.forEach(x=>{let d=document.createElement("div");d.className="video";d.textContent=(x.prompt||"")+" | "+(x.duration||"?")+"s | "+(x.status||"");if(x.output){let z=document.createElement("a");z.href=x.output;z.target="_blank";z.textContent=" 🎬 Fur HAL Video";d.appendChild(z)}h.appendChild(d)})}catch(e){}}
 loadHistory();
 </script></body></html>
@@ -374,4 +458,5 @@ def root():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8000")))
+
 
